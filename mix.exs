@@ -1,6 +1,6 @@
 defmodule Gringotts.Mixfile do
   use Mix.Project
-  
+
   def project do
     [
       app: :gringotts,
@@ -17,9 +17,9 @@ defmodule Gringotts.Mixfile do
         tool: ExCoveralls
       ],
       preferred_cli_env: [
-        "coveralls": :test, 
-        "coveralls.detail": :test, 
-        "coveralls.post": :test, 
+        "coveralls": :test,
+        "coveralls.detail": :test,
+        "coveralls.post": :test,
         "coveralls.html": :test,
         "coveralls.travis": :test
       ],
@@ -32,7 +32,7 @@ defmodule Gringotts.Mixfile do
   # Type `mix help compile.app` for more information
   def application do
     [
-      applications: [:httpoison, :hackney, :elixir_xml_to_map],
+      applications: [:httpoison, :hackney, :elixir_xml_to_map, :timex],
       mod: {Gringotts.Application, []}
     ]
   end
@@ -50,7 +50,7 @@ defmodule Gringotts.Mixfile do
     [
       {:poison, "~> 3.1.0"},
       {:httpoison, "~> 0.13"},
-      {:xml_builder, "~> 0.1.1"}, 
+      {:xml_builder, "~> 0.1.1"},
       {:elixir_xml_to_map, "~> 0.1"},
       {:ex_doc, "~> 0.16", only: :dev, runtime: false},
       {:mock, "~> 0.3.0", only: :test},
@@ -58,14 +58,15 @@ defmodule Gringotts.Mixfile do
       {:excoveralls, "~> 0.7", only: :test},
       {:credo, "~> 0.3", only: [:dev, :test]},
       {:inch_ex, "~> 0.5", only: :docs},
-      {:dialyxir, "~> 0.3", only: [:dev]}
+      {:dialyxir, "~> 0.3", only: [:dev]},
+      {:timex, "~> 3.1"}
     ]
   end
 
   defp description do
     """
-    Gringotts is a payment processing library in Elixir integrating 
-    various payment gateways, this draws motivation for shopify's 
+    Gringotts is a payment processing library in Elixir integrating
+    various payment gateways, this draws motivation for shopify's
     activemerchant ruby gem.
     """
   end
@@ -77,5 +78,5 @@ defmodule Gringotts.Mixfile do
       source_url: "https://github.com/aviabird/gringotts"
     ]
   end
-  
+
 end
