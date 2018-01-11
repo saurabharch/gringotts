@@ -1,6 +1,6 @@
 defmodule Gringotts.Gateways.GlobalCollect do
 
-  @base_url "https://api-sandbox.globalcollect.com/v1/1226"
+  @base_url "https://api-sandbox.globalcollect.com/v1/1226/"
   @api_key_id "e5743abfc360ed12"
   @secret_api_key "Qtg9v4Q0G13sLRNcClWhHnvN1kVYWDcy4w9rG8T86XU="
 
@@ -28,9 +28,9 @@ defmodule Gringotts.Gateways.GlobalCollect do
   }
 
   @payment %CreditCard{
-    number: "5200828282828210",
+    number: "4567350000427977",
     month: 12,
-    year: 2018,
+    year: 18,
     first_name: "John",
     last_name: "Doe",
     verification_code: "123",
@@ -45,54 +45,161 @@ defmodule Gringotts.Gateways.GlobalCollect do
     city: "Monument Valley",
     state: "Utah",
     countryCode: "US"
-
   }
 
-  options = [ email: "john@trexle.com", description: "Store Purchase 1437598192", currency: "USD", merchantCustomerId: "234", customer_name: "Jyoti", doB: "19490917", company: "asma", email: "jyotigautam108@gmail.com", phone: "7798578174", order_id: "2323", invoice: "3433533", billingAddress: @billingAddress, shippingAddress: @shippingAddress ]
+  @invoice %{
+    invoiceNumber: "000000123",
+    invoiceDate: "20140306191500"
+  }
 
-  @spec authorize(float, CreditCard.t, list) :: map
-  def authorize(amount = 5, payment = @payment, opts) do
-    params = create_params_for_auth_or_purchase(amount, payment, opts, false)
-    commit(:post, "payments", params, @opts)
+  @name %{
+    title: "Miss",
+    firstName: "Road",
+    surname: "Runner"
+  }
+
+  @options [ email: "john@trexle.com", description: "Store Purchase 1437598192", currency: "USD", merchantCustomerId: "234", customer_name: "Jyoti", doB: "19490917", company: "asma", email: "jyotigautam108@gmail.com", phone: "7798578174", order_id: "2323", invoice: @invoice, billingAddress: @billingAddress, shippingAddress: @shippingAddress, name: @name, skipAuthentication: "true" ]
+
+  def auth() do
+    authorize(5, @payment, @options)
   end
 
-  defp create_params_for_auth_or_purchase(amount, payment, opts, capture \\ true) do
-    [
-    ]
-      ++ add_order(amount, opts)
-      ++ add_payment(payment, @brand_map)
+  def capt() do
+    capture("000000122600000000380000100001", 2500, @options)
+  end
+
+  def pur() do
+    purchase(5, @payment, @options)
+  end
+
+  def ref() do
+    refund(5, "000000122600000000380000100001", @options)
+  end
+
+  def voi() do
+    void("000000122600000000380000100001", @options)
+  end
+
+  @spec authorize(float, CreditCard.t, list) :: map
+  def authorize(amount, payment, opts) do
+    params = create_params_for_auth_or_purchase(amount, payment, opts)
+    commit(:post, "payments", params, opts)
+  end
+
+  @spec capture(String.t, float, list) :: map
+  def capture(id, amount, opts) do
+    params = create_params_for_capture(amount, opts)
+    commit(:post, "payments/#{id}/approve", params, opts)
+  end
+
+  @spec purchase(float, CreditCard.t, list) :: map
+  def purchase(amount, payment, opts) do
+   {:ok,response} = authorize(amount, payment, opts)
+   payment_Id = response.raw["payment"]["id"]
+   capture(payment_Id, amount, opts)
+  end
+
+  @spec refund(float, String.t, list) :: map
+  def refund(amount, id, opts) do
+    params = create_params_for_refund(amount, opts)
+    commit(:post, "payments/#{id}/refund", params, opts)
+  end
+
+  @spec void(String.t, list) :: map
+  def void(id, opts) do
+    params = nil
+    commit(:post, "payments/#{id}/cancel", params, opts)
+  end
+
+  defp create_params_for_refund(amount, opts) do
+    %{
+      amountOfMoney: add_money(amount, opts),
+      customer: add_customer(opts)
+    }
+  end
+
+  defp create_params_for_auth_or_purchase(amount, payment, opts) do
+    %{
+      order: add_order(amount, opts),
+      cardPaymentMethodSpecificInput: add_payment(payment, @brand_map, opts)
+    }
+  end
+
+   defp create_params_for_capture(amount, opts) do
+    %{
+      order: add_order(amount, opts)
+    }
   end
 
   defp add_order(money, options) do
-    [
-      "order[amountOfMoney][amount]": money,
-      "order[amountOfMoney][currencyCode]": options[:currency],
-      "order[customer][merchantCustomerId]": options[:merchantCustomerId],
-      "order[customer][personalInformation][name]": options[:customer_name],
-      "order[customer][dateOfBirth]": options[:doB],
-      "order[customer][companyInformation][name]": options[:company],
-      "order[customer][billingAddress]": options[:billingAddress],
-      "order[customer][shippingAddress]": options[:shippingAddress],
-      "order[customer][contactDetails][emailAddress]": options[:email],
-      "order[customer][contactDetails][phoneNumber]": options[:phone],
-      "order[references][merchantReference]": options[:order_id],
-      "order[references][descriptor]": options[:description], # Max 256 chars
-      "order[references][invoiceData][invoiceNumber]": options[:invoice]
-    ]
+    %{
+      amountOfMoney: add_money(money, options),
+      customer: add_customer(options),
+      references: add_references(options)
+    }
   end
 
-  defp add_payment(%CreditCard{} = payment, brand_map) do
+  defp add_money(amount, options) do
+    %{
+      amount: amount,
+      currencyCode: options[:currency]
+    }
+  end
+
+  defp add_customer(options) do
+    %{
+      merchantCustomerId: options[:merchantCustomerId],
+      personalInformation: personal_info(options),
+      dateOfBirth: options[:doB],
+      companyInformation: company_info(options),
+      billingAddress: options[:billingAddress],
+      shippingAddress: options[:shippingAddress],
+      contactDetails: contact(options)
+    }
+  end
+
+  defp add_references(options) do
+    %{
+      descriptor: options[:description],
+      invoiceData: options[:invoice]
+    }
+  end
+
+  defp personal_info(options) do
+    %{
+      name: options[:name]
+    }
+  end
+
+  defp company_info(options) do
+    %{
+      name: options[:company]
+    }
+  end
+
+  defp contact(options) do
+    %{
+      emailAddress: options[:email],
+      phoneNumber: options[:phone]
+    }
+  end
+
+  def add_card(%CreditCard{} = payment) do
+    %{
+      cvv: payment.verification_code,
+      cardNumber: payment.number,
+      expiryDate:  "#{payment.month}"<>"#{payment.year}",
+      cardholderName: CreditCard.full_name(payment)
+    }
+  end
+
+  defp add_payment(payment, brand_map, opts) do
     brand = payment.brand
-    require IEx
-    IEx.pry
-    [
-      "cardPaymentMethodSpecificInput[paymentProductId]": brand_map.brand,
-      "cardPaymentMethodSpecificInput[skipAuthentication]": "true", # refers to 3DSecure
-      "cardPaymentMethodSpecificInput[card][cvv]": payment.verification_code,
-      "cardPaymentMethodSpecificInput[card][cardNumber]": payment.number,
-      "cardPaymentMethodSpecificInput[card][expiryDate]": payment.month<>payment.year,
-      "cardPaymentMethodSpecificInput[card][cardholderName]": CreditCard.full_name(payment)
-    ]
+    %{
+      paymentProductId:  Map.fetch!(brand_map, String.to_atom(brand)),
+      skipAuthentication: opts[:skipAuthentication],
+      card: add_card(payment)
+    }
   end
 
   defp auth_digest(path, secret_api_key, time) do
@@ -102,11 +209,10 @@ defmodule Gringotts.Gateways.GlobalCollect do
 
   defp commit(method, path, params, opts) do
     time = date
-    sha_signature = auth_digest(path, @secret_api_key, time)
-    auth_token = "GCS v1HMAC:#{@api_key_id}:#{Base.encode64(sha_signature)}"
+    sha_signature = auth_digest(path, @secret_api_key, time) |> Base.encode64
+    auth_token = "GCS v1HMAC:#{@api_key_id}:#{sha_signature}"
     headers = [{"Content-Type", "application/json"}, {"Authorization", auth_token}, {"Date", time}]
-    data = params_to_string(params)
-    #options = [hackney: [:insecure, basic_auth: {opts[:config][:api_key], "password"}]]
+    data = Poison.encode!(params)
     url = "#{@base_url}#{path}"
     response = HTTPoison.request(method, url, data, headers)
     response |> respond
@@ -114,9 +220,10 @@ defmodule Gringotts.Gateways.GlobalCollect do
 
   defp date() do
     use Timex
-    datetime = Timex.now
+    datetime = Timex.now |> Timex.local
     strftime_str = Timex.format!(datetime, "%a, %d %b %Y %H:%M:%S ", :strftime)
-    time = strftime_str <>"IST"
+    time_zone = Timex.timezone(:local, datetime)
+    time = strftime_str <>"#{time_zone.abbreviation}"
   end
 
   @spec respond(term) ::
