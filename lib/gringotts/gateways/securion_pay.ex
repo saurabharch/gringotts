@@ -9,6 +9,7 @@ defmodule Gringotts.Gateways.SecurionPay do
   | Action                                       | Method        |
   | ------                                       | ------        |
   | Authorize a Credit Card                      | `authorize/3` |
+  | Capture a previously authorized amount       | `capture/3`   |
 
   [home]: https://securionpay.com/
   [docs]: https://securionpay.com/docs
@@ -106,7 +107,6 @@ defmodule Gringotts.Gateways.SecurionPay do
 
   """
   @spec authorize(Money.t(), CreditCard.t() | String.t(), keyword) :: {:ok | :error, Response}
-
   def authorize(amount, %CreditCard{} = card, opts) do
     header = [{"Authorization", "Basic " <> opts[:config][:secret_key]}]
     token_id = create_token(card, header)
@@ -125,6 +125,34 @@ defmodule Gringotts.Gateways.SecurionPay do
 
     params
     |> commit(:post, "charges", header)
+    |> respond
+  end
+
+  @doc """
+  Captures a pre-authorized transcation from the customer.
+
+  The amount present in the pre-authorization referenced by `payment_id` is transferred to the 
+  merchant account by SecurionPay.
+
+
+  Successful request returns a charge object that was captured.
+
+  ## Note
+  > SecurionPay does not support partial captures. So there is no need of amount in capture.
+
+  ## Example
+
+  iex> amount = 100
+  iex> payment_id = "char_WCglhaf1Gn9slpXWYBkZqbGK"
+  iex> opts = [config: "c2tfdGVzdF9GZjJKcHE1OXNTV1Q3cW1JOWF0aWk1elI6"]
+  iex> result = Gringotts.Gateways.SecurionPay.capture(payment_id, amount, opts)
+
+  """
+  @spec capture(String.t(), Money.t(), keyword) :: {:ok | :error, Response}
+  def capture(payment_id, _amount, opts) do
+    header = [{"Authorization", "Basic " <> opts[:config]}]
+
+    commit([], :post, "charges/#{payment_id}/capture", header)
     |> respond
   end
 
