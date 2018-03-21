@@ -36,6 +36,12 @@ defmodule Gringotts.Gateways.SecurionPay do
   [SP]: https://securionpay.com/
   [api-key]: https://securionpay.com/account-settings#api-keys
 
+
+  ## Note
+
+  * SecurionPay always processes the transactions in the minor units of the currency 
+  For example `cent` instead of `dollar`
+
   ## Supported countries
 
   SecurionPay supports the countries listed [here][country-list]
@@ -71,14 +77,15 @@ defmodule Gringotts.Gateways.SecurionPay do
   To transfer the funds to merchant's account follow this up with a `capture/3`.
 
   SecurionPay returns a `chargeId` which uniquely identifies a transaction (available in the `Response.id` field) 
-  which should be stored at your side to use in:
+  which should be stored by the caller for using in:
 
   * `capture/3` an authorized transaction.
   * `void/2` a transaction.
 
-  ## Example 1
-      iex> amount = Money.new(20, :USD}
-      iex> opts = [config: [:secret_key: "c2tfdGVzdF9GZjJKcHE1OXNTV1Q3cW1JOWF0aWk1elI6"]]
+  ## Example
+  ### With a `CreditCard` struct
+      iex> amount = Money.new(20, :USD)
+      iex> opts = [config: [secret_key: "c2tfdGVzdF9GZjJKcHE1OXNTV1Q3cW1JOWF0aWk1elI6"]]
       iex> card = %CreditCard{
            first_name: "Harry",
            last_name: "Potter",
@@ -90,29 +97,31 @@ defmodule Gringotts.Gateways.SecurionPay do
           }
       iex> result = Gringotts.Gateways.SecurionPay.authorize(amount, card, opts)
 
-  ## Example 2
+  ## Example
+  ### With a `card_token` and `customer_token`
       iex> amount = Money.new(20, :USD}
-      iex> opts = [config: [:secret_key: "c2tfdGVzdF9GZjJKcHE1OXNTV1Q3cW1JOWF0aWk1elI6"], customerId: "cust_zpYEBK396q3rvIBZYc3PIDwT"]
+      iex> opts = [config: [:secret_key: "c2tfdGVzdF9GZjJKcHE1OXNTV1Q3cW1JOWF0aWk1elI6"], customer_id: "cust_zpYEBK396q3rvIBZYc3PIDwT"]
       iex> card = "card_LqTT5tC10BQzDbwWJhFWXDoP"
       iex> result = Gringotts.Gateways.SecurionPay.authorize(amount, card, opts)
 
   """
-  @spec authorize(Money.t(), CreditCard.t() | {}, keyword) :: {:ok | :error, Response}
+  @spec authorize(Money.t(), CreditCard.t() | String.t(), keyword) :: {:ok | :error, Response}
 
   def authorize(amount, %CreditCard{} = card, opts) do
     header = [{"Authorization", "Basic " <> opts[:config][:secret_key]}]
     token_id = create_token(card, header)
+    {currency, value, _, _} = Money.to_integer_exp(amount)
 
     token_id
-    |> create_params(amount, false)
+    |> create_params(currency, value, false)
     |> commit(:post, "charges", header)
     |> respond
   end
 
-  def authorize(amount, card, opts) do
+  def authorize(amount, card_id, opts) when is_binary(card_id) do
     header = [{"Authorization", "Basic " <> opts[:config][:secret_key]}]
-
-    params = create_params({card, opts[:customerId]}, amount, false)
+    {currency, value, _, _} = Money.to_integer_exp(amount)
+    params = create_params(card_id, opts[:customer_id], currency, value, false)
 
     params
     |> commit(:post, "charges", header)
@@ -124,25 +133,21 @@ defmodule Gringotts.Gateways.SecurionPay do
   ###############################################################################
 
   # Creates the parameters for authorise function when 
-  # cardId and customerId is provided.
-  @spec create_params({}, Money.t(), boolean) :: {[]}
-  defp create_params({cardId, customerId}, amount, captured) do
-    {currency, value, _, _} = Money.to_integer_exp(amount)
-
+  # card_id and customerId is provided.
+  @spec create_params(String.t(), String.t(), String.t(), Integer.t(), boolean) :: {[]}
+  defp create_params(card_id, customer_id, currency, value, captured) do
     [
       {"amount", value},
       {"currency", to_string(currency)},
-      {"card", cardId},
+      {"card", card_id},
       {"captured", "#{captured}"},
-      {"customerId", customerId}
+      {"customerId", customer_id}
     ]
   end
 
   # Creates the parameters for authorise when token is provided.
-  @spec create_params(Integer.t(), Money.t(), boolean) :: {[]}
-  defp create_params(token, amount, captured) do
-    {currency, value, _, _} = Money.to_integer_exp(amount)
-
+  @spec create_params(String.t(), String.t(), Integer.t(), boolean) :: {[]}
+  defp create_params(token, currency, value, captured) do
     [
       {"amount", value},
       {"currency", to_string(currency)},
@@ -172,11 +177,6 @@ defmodule Gringotts.Gateways.SecurionPay do
        id: Map.get(parsed_body, "id"),
        token: Map.get(parsed_body["card"], "id"),
        status_code: 200,
-       gateway_code: 200,
-       reason: nil,
-       message: "Card succesfully authorized",
-       avs_result: nil,
-       cvc_result: nil,
        raw: body,
        fraud_review: Map.get(parsed_body, "fraudDetails")
      }}
@@ -202,7 +202,7 @@ defmodule Gringotts.Gateways.SecurionPay do
       {"expYear", card.year},
       {"cvc", card.verification_code},
       {"expMonth", card.month},
-      {"cardholderName", card.first_name <> " " <> card.last_name}
+      {"cardholderName", CreditCard.full_name(card)}
     ]
     |> commit(:post, "tokens", header)
     |> make_map
