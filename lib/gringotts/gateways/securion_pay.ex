@@ -9,7 +9,8 @@ defmodule Gringotts.Gateways.SecurionPay do
   | Action                                       | Method        |
   | ------                                       | ------        |
   | Authorize a Credit Card                      | `authorize/3` |
-  | Capture a previously authorized amount       | `capture/3`   |
+  | Captures a previously authorized amount      | `capture/3`   |
+  |	Create customer's profile					 | `store/2`     |
 
   [home]: https://securionpay.com/
   [docs]: https://securionpay.com/docs
@@ -141,19 +142,72 @@ defmodule Gringotts.Gateways.SecurionPay do
   > SecurionPay does not support partial captures. So there is no need of amount in capture.
 
   ## Example
-
-  iex> amount = 100
-  iex> payment_id = "char_WCglhaf1Gn9slpXWYBkZqbGK"
-  iex> opts = [config: "c2tfdGVzdF9GZjJKcHE1OXNTV1Q3cW1JOWF0aWk1elI6"]
-  iex> result = Gringotts.Gateways.SecurionPay.capture(payment_id, amount, opts)
+      iex> opts = [config: [secret_key: "c2tfdGVzdF82cGZBYTI3aDhvOUUxanRJZWhaQkE3dkE6"]]
+      iex> amount = 100
+      iex> payment_id = "char_WCglhaf1Gn9slpXWYBkZqbGK" 
+      iex> result = Gringotts.Gateways.SecurionPay.capture(payment_id, amount, opts)     
 
   """
   @spec capture(String.t(), Money.t(), keyword) :: {:ok | :error, Response}
   def capture(payment_id, _amount, opts) do
-    header = [{"Authorization", "Basic " <> opts[:config]}]
+    header = [{"Authorization", "Basic " <> opts[:config][:secret_key]}]
 
     commit([], :post, "charges/#{payment_id}/capture", header)
     |> respond
+  end
+
+  @doc """
+  Stores the customer's card details for later use.
+
+  SecurionPay can store the payment-source details, for example card  details
+  which can be used to effectively process _One-Click_ payments, and returns a 
+  card id which can be used for `purchase/3`, `authorize/3` and `unstore/2`.
+
+  The card id is available in the `Response.id` field.
+
+  It is **mandatory** to pass either `:email` or `:customer_id` in the opts field.
+
+  Here `store/2` is implemented in two ways:
+  * `:customer_id` is available in the opts field
+  * `:email` is available in the opts field(`:customer_id` not available)
+
+  ## Example
+  ### With the `:customer_id` available in the opts field
+      iex> opts = [config: [secret_key: "c2tfdGVzdF9GZjJKcHE1OXNTV1Q3cW1JOWF0aWk1elI6"], customer_id: "cust_zpYEBK396q3rvIBZYc3PIDwT"]
+      iex> card = %CreditCard{
+           first_name: "Harry",
+           last_name: "Potter",
+           number: "4200000000000000",
+           year: 2027,
+           month: 12,
+           verification_code: "123",
+           brand: "VISA"
+          }	
+      iex> result = Gringotts.Gateways.SecurionPay.store(card, opts)
+  ## Example
+  ### With `:email` in the opts field
+      iex> opts = [config: [secret_key: "c2tfdGVzdF9GZjJKcHE1OXNTV1Q3cW1JOWF0aWk1elI6"], email: "customer@example.com"]
+      iex> card = %CreditCard{
+           first_name: "Harry",
+           last_name: "Potter",
+           number: "4200000000000000",
+           year: 2027,
+           month: 12,
+           verification_code: "123",
+           brand: "VISA"
+          }	
+      iex> result = Gringotts.Gateways.SecurionPay.store(card, opts)
+           
+  """
+  @spec store(CreditCard.t(), Keyword.t()) :: {:ok | :error, Response.t()}
+  def store(card, opts) do
+    header = [{"Authorization", "Basic " <> opts[:config][:secret_key]}]
+
+    if Keyword.has_key?(opts, :customer_id) do
+      card |> create_card(opts, header)
+    else
+      card |> create_customer(opts, header)
+    end
   end
 
   ###############################################################################
@@ -162,6 +216,29 @@ defmodule Gringotts.Gateways.SecurionPay do
 
   # Creates the parameters for authorise function when 
   # card_id and customerId is provided.
+
+  # @spec create_card()
+  defp create_card(card, opts, header) do
+    [
+      {"number", card.number},
+      {"expMonth", card.month},
+      {"expYear", card.year},
+      {"cvc", card.verification_code}
+    ]
+    |> commit(:post, "customers/#{opts[:customer_id]}/cards", header)
+  end
+
+  # @spec create_customer()
+  defp create_customer(card, opts, header) do
+    customer_id =
+      [{"email", opts[:email]}]
+      |> commit(:post, "customers", header)
+      |> make_map
+      |> Map.fetch!("id")
+
+    create_card(card, opts ++ [customer_id: customer_id], header)
+  end
+
   @spec create_params(String.t(), String.t(), String.t(), Integer.t(), boolean) :: {[]}
   defp create_params(card_id, customer_id, currency, value, captured) do
     [
