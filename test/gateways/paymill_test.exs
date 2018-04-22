@@ -153,6 +153,7 @@ defmodule Gringotts.Gateways.PaymillTest do
       Bypass.down(bypass)
       {:error, response} = Gateway.purchase(@amount_4200, @invalid_token, config: opts)
       assert response.reason == "econnrefused"
+      Bypass.up(bypass)
     end
 
     test "when token is invalid", %{bypass: bypass, opts: opts} do
@@ -181,7 +182,6 @@ defmodule Gringotts.Gateways.PaymillTest do
         p_conn = parse(conn)
         params = p_conn.body_params
         assert params["amount"] == "420000"
-        assert params["currency"] == "EUR"
         Conn.resp(conn, 200, @refn_success)
       end)
 
@@ -194,6 +194,7 @@ defmodule Gringotts.Gateways.PaymillTest do
       Bypass.down(bypass)
       {:error, response} = Gateway.refund(@amount_4200, @refn_tran_id, config: opts)
       assert response.reason == "econnrefused"
+      Bypass.up(bypass)
     end
 
     test "when transaction is used again", %{bypass: bypass, opts: opts} do
@@ -201,7 +202,6 @@ defmodule Gringotts.Gateways.PaymillTest do
         p_conn = parse(conn)
         params = p_conn.body_params
         assert params["amount"] == "420000"
-        assert params["currency"] == "EUR"
         Conn.resp(conn, 200, @refn_again)
       end)
 
@@ -215,7 +215,6 @@ defmodule Gringotts.Gateways.PaymillTest do
         p_conn = parse(conn)
         params = p_conn.body_params
         assert params["amount"] == "420000"
-        assert params["currency"] == "EUR"
         Conn.resp(conn, 200, @refn_trans_not_found)
       end)
 
@@ -241,6 +240,7 @@ defmodule Gringotts.Gateways.PaymillTest do
       Bypass.down(bypass)
       {:error, response} = Gateway.void(@void_success_id, config: opts)
       assert response.reason == "econnrefused"
+      Bypass.up(bypass)
     end
 
     test "when preauthorization used before", %{bypass: bypass, opts: opts} do
